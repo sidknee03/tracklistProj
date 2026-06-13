@@ -1,0 +1,153 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+:root {
+  --bg:       #0a0a0a;
+  --surface:  #111111;
+  --line:     #222222;
+  --line2:    #2e2e2e;
+  --text:     #e8e8e8;
+  --dim:      #555555;
+  --hi:       #f0f0f0;
+  --green:    #b8f5b0;
+  --red:      #f5b0b0;
+  --yellow:   #f5e6b0;
+  --blue:     #b0d4f5;
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+body { min-height: 100vh; }
+
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 32px 80px;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  min-height: 100vh;
+}
+
+/* ── header ── */
+.dash-header {
+  padding: 48px 0 32px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 48px;
+  display: flex;
+  align-items: baseline;
+  gap: 24px;
+}
+
+.dash-header h1 {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--hi);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dash-header h1::before {
+  content: '> ';
+  color: var(--dim);
+}
+
+.dash-header p {
+  font-size: 0.75rem;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+}
+
+/* ── summary cards ── */
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--line);
+  margin-bottom: 48px;
+}
+
+.card {
+  padding: 32px 28px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card:last-child { border-right: none; }
+
+.card-icon { display: none; }
+
+.card-label {
+  font-size: 0.65rem;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.card-value {
+  font-size: 2.8rem;
+  font-weight: 600;
+  color: var(--hi);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* ── section label ── */
+.section-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0;
+}
+
+/* ── charts grid ── */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0;
+  border: 1px solid var(--line);
+}
+
+@media (max-width: 860px) { .charts-grid { grid-template-columns: 1fr; } }
+
+.chart-card {
+  padding: 28px 24px 20px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.chart-card:nth-child(2n) { border-right: none; }
+.chart-card:nth-last-child(-n+2) { border-bottom: none; }
+
+.chart-card h2 {
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 24px;
+}
+
+/* ── status ── */
+.status {
+  padding: 40px;
+  text-align: left;
+  color: var(--dim);
+  font-size: 0.8rem;
+}
+.status::before { content: '// '; }
+.status.error { color: var(--red); }
+
+/* ── recharts overrides ── */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: var(--line2) !important;
+}
+.recharts-tooltip-wrapper { outline: none; }

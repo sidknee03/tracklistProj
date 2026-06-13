@@ -1,0 +1,4 @@
+/* App-level styles — global layout lives in index.css */
+.dashboard {
+  min-height: 100vh;
+}
