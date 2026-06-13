@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python3 -m venv .venv)",
-      "Bash(.venv/bin/pip install *)",
-      "Bash(DATABASE_URL=\"postgresql://dummy:dummy@localhost:5432/dummy\" ../.venv/bin/pytest -v --tb=short)"
-    ]
-  }
-}

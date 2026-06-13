@@ -24,6 +24,9 @@ frontend/.next/
 ingestion/tokens/*.json
 ingestion/raw_data/
 
+# Claude Code
+.claude/
+
 # IDE
 .DS_Store
 .idea/
