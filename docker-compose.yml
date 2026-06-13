@@ -1,8 +1,26 @@
 version: "3.9"
 
+# Default (no DATABASE_URL): API uses SQLite at data/music.db — no Postgres needed.
+# To use Postgres locally: docker compose --profile postgres up
+# To point at AWS RDS: set DATABASE_URL=postgresql://... in .env
+
 services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./data:/data
+
   db:
     image: postgres:16-alpine
+    profiles: ["postgres"]
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-musicdash}
@@ -13,25 +31,10 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-musicuser} -d ${POSTGRES_DB:-musicdash}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-musicuser}"]
       interval: 5s
       timeout: 5s
       retries: 10
-
-  api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-musicuser}:${POSTGRES_PASSWORD:-musicpass}@db:5432/${POSTGRES_DB:-musicdash}
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./backend:/app
 
 volumes:
   pgdata:

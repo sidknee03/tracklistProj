@@ -1,67 +1,68 @@
 """
-Loads raw_data/*.json (produced by spotify_fetch.py or csv_fallback.py)
-into PostgreSQL, running schema migrations first.
+Loads raw_data/*.json into the local SQLite database (data/music.db) by default.
+Set DATABASE_URL=postgresql://... to target Postgres/RDS instead.
 
 Usage:
-    python loader.py [--reset]   # --reset drops and re-creates all tables
+    python loader.py [--reset]
 """
 
 import argparse
 import json
-import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
-import psycopg2
-import psycopg2.extras
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-RAW_DIR = Path(__file__).parent / "raw_data"
+# Add backend to path so we can import from app.db
+sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+
+from app.db.connection import db_cursor, is_postgres, SQLITE_PATH
+
+RAW_DIR       = Path(__file__).parent / "raw_data"
 MIGRATIONS_DIR = Path(__file__).parent.parent / "backend" / "migrations"
 
-
-def get_conn():
-    url = os.environ.get("DATABASE_URL")
-    if not url:
-        raise RuntimeError("DATABASE_URL not set")
-    return psycopg2.connect(url)
+PH = "%s" if is_postgres() else "?"
 
 
-def run_migration(cur, path: Path) -> None:
-    print(f"  Running {path.name}...")
-    cur.execute(path.read_text())
+# ─── migration runner ─────────────────────────────────────────────────────────
 
-
-def apply_migrations(conn) -> None:
+def apply_migrations() -> None:
     print("Applying migrations...")
-    with conn.cursor() as cur:
-        cur.execute("""
+    with db_cursor() as cur:
+        cur.execute(f"""
             CREATE TABLE IF NOT EXISTS _migrations (
                 name TEXT PRIMARY KEY,
-                applied_at TIMESTAMPTZ DEFAULT now()
+                applied_at TEXT DEFAULT (datetime('now'))
             )
         """)
+
         for sql_file in sorted(MIGRATIONS_DIR.glob("*.sql")):
-            cur.execute("SELECT 1 FROM _migrations WHERE name = %s", (sql_file.name,))
+            cur.execute(f"SELECT 1 FROM _migrations WHERE name = {PH}", (sql_file.name,))
             if cur.fetchone():
-                print(f"  Skipping {sql_file.name} (already applied)")
+                print(f"  skip {sql_file.name}")
                 continue
-            run_migration(cur, sql_file)
-            cur.execute("INSERT INTO _migrations (name) VALUES (%s)", (sql_file.name,))
-    conn.commit()
+            print(f"  run  {sql_file.name}")
+            # SQLite needs statements executed one at a time
+            statements = [s.strip() for s in sql_file.read_text().split(";") if s.strip()]
+            for stmt in statements:
+                cur.execute(stmt)
+            cur.execute(f"INSERT INTO _migrations (name) VALUES ({PH})", (sql_file.name,))
 
 
-def reset_schema(conn) -> None:
+def reset_schema() -> None:
     print("Resetting schema...")
-    with conn.cursor() as cur:
-        cur.execute("""
-            DROP TABLE IF EXISTS saved_tracks, track_artists, tracks, albums,
-                                 artist_genres, genres, artists, _migrations CASCADE
-        """)
-    conn.commit()
+    tables = ["saved_tracks", "track_artists", "tracks", "albums",
+              "artist_genres", "genres", "artists", "_migrations"]
+    with db_cursor() as cur:
+        for t in tables:
+            cur.execute(f"DROP TABLE IF EXISTS {t}")
+        views = ["v_genre_distribution", "v_popularity_by_decade", "v_top_artists",
+                 "v_duration_by_genre", "v_explicit_ratio", "v_tracks_over_time", "v_summary"]
+        for v in views:
+            cur.execute(f"DROP VIEW IF EXISTS {v}")
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
@@ -78,13 +79,11 @@ def safe_date(val: str | None) -> str | None:
 
 
 def upsert_artist(cur, artist: dict) -> None:
-    cur.execute("""
+    cur.execute(f"""
         INSERT INTO artists (artist_id, name, popularity, followers)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (artist_id) DO UPDATE
-            SET name       = EXCLUDED.name,
-                popularity = EXCLUDED.popularity,
-                followers  = EXCLUDED.followers
+        VALUES ({PH},{PH},{PH},{PH})
+        ON CONFLICT(artist_id) DO UPDATE SET
+            name=excluded.name, popularity=excluded.popularity, followers=excluded.followers
     """, (
         artist["id"],
         artist.get("name", "Unknown"),
@@ -93,127 +92,113 @@ def upsert_artist(cur, artist: dict) -> None:
     ))
 
     for genre_name in artist.get("genres", []):
-        cur.execute("""
-            INSERT INTO genres (name) VALUES (%s)
-            ON CONFLICT (name) DO NOTHING
-        """, (genre_name,))
-        cur.execute("SELECT genre_id FROM genres WHERE name = %s", (genre_name,))
-        genre_id = cur.fetchone()[0]
-        cur.execute("""
-            INSERT INTO artist_genres (artist_id, genre_id) VALUES (%s, %s)
-            ON CONFLICT DO NOTHING
-        """, (artist["id"], genre_id))
+        cur.execute(f"INSERT INTO genres (name) VALUES ({PH}) ON CONFLICT(name) DO NOTHING", (genre_name,))
+        cur.execute(f"SELECT genre_id FROM genres WHERE name = {PH}", (genre_name,))
+        row = cur.fetchone()
+        genre_id = row[0] if row else None
+        if genre_id:
+            cur.execute(f"""
+                INSERT INTO artist_genres (artist_id, genre_id) VALUES ({PH},{PH})
+                ON CONFLICT DO NOTHING
+            """, (artist["id"], genre_id))
 
 
 def upsert_track(cur, track: dict, added_at: str | None = None) -> None:
-    album = track.get("album", {})
+    album    = track.get("album", {})
     album_id = album.get("id")
 
     if album_id:
-        cur.execute("""
+        cur.execute(f"""
             INSERT INTO albums (album_id, name, release_date, album_type)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (album_id) DO NOTHING
-        """, (
-            album_id,
-            album.get("name", "Unknown"),
-            safe_date(album.get("release_date")),
-            album.get("album_type", "album"),
-        ))
+            VALUES ({PH},{PH},{PH},{PH})
+            ON CONFLICT(album_id) DO NOTHING
+        """, (album_id, album.get("name", "Unknown"),
+              safe_date(album.get("release_date")), album.get("album_type", "album")))
 
-    cur.execute("""
+    cur.execute(f"""
         INSERT INTO tracks (track_id, name, album_id, duration_ms, popularity, explicit)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (track_id) DO UPDATE
-            SET name        = EXCLUDED.name,
-                popularity  = EXCLUDED.popularity,
-                explicit    = EXCLUDED.explicit
+        VALUES ({PH},{PH},{PH},{PH},{PH},{PH})
+        ON CONFLICT(track_id) DO UPDATE SET
+            name=excluded.name, popularity=excluded.popularity, explicit=excluded.explicit
     """, (
         track["id"],
         track.get("name", "Unknown"),
         album_id,
         track.get("duration_ms", 0),
         track.get("popularity", 0),
-        bool(track.get("explicit", False)),
+        int(bool(track.get("explicit", False))),
     ))
 
     for artist_stub in track.get("artists", []):
         if artist_stub.get("id"):
-            cur.execute("""
-                INSERT INTO track_artists (track_id, artist_id) VALUES (%s, %s)
+            cur.execute(f"""
+                INSERT INTO track_artists (track_id, artist_id) VALUES ({PH},{PH})
                 ON CONFLICT DO NOTHING
             """, (track["id"], artist_stub["id"]))
 
     if added_at:
-        cur.execute("""
-            INSERT INTO saved_tracks (track_id, added_at) VALUES (%s, %s)
-            ON CONFLICT (track_id) DO NOTHING
+        cur.execute(f"""
+            INSERT INTO saved_tracks (track_id, added_at) VALUES ({PH},{PH})
+            ON CONFLICT(track_id) DO NOTHING
         """, (track["id"], added_at))
 
 
 # ─── loaders ──────────────────────────────────────────────────────────────────
 
-def load_artists(conn) -> None:
+def load_artists() -> None:
     path = RAW_DIR / "artists.json"
     if not path.exists():
-        print("  artists.json not found, skipping")
-        return
+        print("  artists.json not found, skipping"); return
     artists = json.loads(path.read_text())
     print(f"Loading {len(artists)} artists...")
-    with conn.cursor() as cur:
+    with db_cursor() as cur:
         for a in artists:
             upsert_artist(cur, a)
-    conn.commit()
 
 
-def load_saved_tracks(conn) -> None:
+def load_saved_tracks() -> None:
     path = RAW_DIR / "saved_tracks.json"
     if not path.exists():
-        print("  saved_tracks.json not found, skipping")
-        return
+        print("  saved_tracks.json not found, skipping"); return
     items = json.loads(path.read_text())
     print(f"Loading {len(items)} saved tracks...")
-    with conn.cursor() as cur:
+    with db_cursor() as cur:
         for item in items:
-            track = item.get("track") or item
+            track    = item.get("track") or item
             added_at = item.get("added_at")
             if track and track.get("id"):
                 upsert_track(cur, track, added_at)
-    conn.commit()
 
 
-def load_top_tracks(conn) -> None:
+def load_top_tracks() -> None:
     path = RAW_DIR / "top_tracks.json"
     if not path.exists():
-        print("  top_tracks.json not found, skipping")
-        return
+        print("  top_tracks.json not found, skipping"); return
     items = json.loads(path.read_text())
-    print(f"Loading {len(items)} top tracks (enriching only, no saved_at)...")
-    with conn.cursor() as cur:
+    print(f"Loading {len(items)} top tracks...")
+    with db_cursor() as cur:
         for item in items:
             track = item.get("track") or item
             if track and track.get("id"):
                 upsert_track(cur, track, added_at=None)
-    conn.commit()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--reset", action="store_true", help="Drop and recreate all tables")
+    parser.add_argument("--reset", action="store_true")
     args = parser.parse_args()
 
-    conn = get_conn()
-    try:
-        if args.reset:
-            reset_schema(conn)
+    db_label = "Postgres" if is_postgres() else f"SQLite ({SQLITE_PATH})"
+    print(f"Target: {db_label}\n")
 
-        apply_migrations(conn)
-        load_artists(conn)
-        load_saved_tracks(conn)
-        load_top_tracks(conn)
-        print("\nLoad complete.")
-    finally:
-        conn.close()
+    if args.reset:
+        reset_schema()
+
+    apply_migrations()
+    load_artists()
+    load_saved_tracks()
+    load_top_tracks()
+    print("\nDone.")
 
 
 if __name__ == "__main__":

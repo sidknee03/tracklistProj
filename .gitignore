@@ -27,6 +27,9 @@ ingestion/raw_data/
 # Claude Code
 .claude/
 
+# Local SQLite database (data stays local, schema is in migrations/)
+data/music.db
+
 # IDE
 .DS_Store
 .idea/
