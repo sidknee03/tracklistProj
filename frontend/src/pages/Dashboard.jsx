@@ -1,24 +1,24 @@
-import { useQuery }        from "../hooks/useQuery";
-import { fetchSummary, fetchGenres, fetchPopByDecade, fetchTopArtists, fetchDurationByGenre } from "../api";
-import SummaryCards    from "../components/SummaryCards";
-import GenreChart      from "../components/GenreChart";
-import PopularityChart from "../components/PopularityChart";
-import ArtistsChart    from "../components/ArtistsChart";
-import DurationChart   from "../components/DurationChart";
-import Loader          from "../components/Loader";
+import { useQuery }     from "../hooks/useQuery";
+import { fetchSummary, fetchPlatformRevenue, fetchTopArtists, fetchGenreRevenue, fetchMonthlyTrend } from "../api";
+import SummaryCards  from "../components/SummaryCards";
+import PlatformChart from "../components/PlatformChart";
+import TrendChart    from "../components/TrendChart";
+import ArtistsChart  from "../components/ArtistsChart";
+import GenreChart    from "../components/GenreChart";
+import Loader        from "../components/Loader";
 
 export default function Dashboard() {
-  const summary  = useQuery(fetchSummary);
-  const genres   = useQuery(fetchGenres);
-  const decades  = useQuery(fetchPopByDecade);
-  const artists  = useQuery(fetchTopArtists);
-  const duration = useQuery(fetchDurationByGenre);
+  const summary   = useQuery(fetchSummary);
+  const platforms = useQuery(fetchPlatformRevenue);
+  const artists   = useQuery(fetchTopArtists);
+  const genres    = useQuery(fetchGenreRevenue);
+  const trend     = useQuery(fetchMonthlyTrend);
 
   return (
     <div className="dashboard">
       <header className="dash-header">
-        <h1>music.db</h1>
-        <p>spotify library · postgresql · {new Date().getFullYear()}</p>
+        <h1>royalty.db</h1>
+        <p>streaming revenue analytics · spotify · tidal · bandcamp · soundcloud + more</p>
       </header>
 
       {summary.loading
@@ -26,10 +26,10 @@ export default function Dashboard() {
         : <SummaryCards data={summary.data} />}
 
       <div className="charts-grid">
-        {genres.loading   ? <Loader error={genres.error}   /> : <GenreChart      data={genres.data}   />}
-        {decades.loading  ? <Loader error={decades.error}  /> : <PopularityChart  data={decades.data}  />}
-        {artists.loading  ? <Loader error={artists.error}  /> : <ArtistsChart     data={artists.data}  />}
-        {duration.loading ? <Loader error={duration.error} /> : <DurationChart    data={duration.data} />}
+        {platforms.loading ? <Loader error={platforms.error} /> : <PlatformChart data={platforms.data} />}
+        {trend.loading     ? <Loader error={trend.error}     /> : <TrendChart    data={trend.data}     />}
+        {artists.loading   ? <Loader error={artists.error}   /> : <ArtistsChart  data={artists.data}   />}
+        {genres.loading    ? <Loader error={genres.error}    /> : <GenreChart    data={genres.data}    />}
       </div>
     </div>
   );

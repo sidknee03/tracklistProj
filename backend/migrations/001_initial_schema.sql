@@ -1,54 +1,54 @@
--- Migration 001: Initial schema
--- Written for SQLite (default local storage).
--- For Postgres/RDS: replace INTEGER PRIMARY KEY AUTOINCREMENT → SERIAL PRIMARY KEY,
--- TEXT date columns → DATE / TIMESTAMPTZ, INTEGER boolean → BOOLEAN.
+-- Migration 001: Streaming royalty analytics schema
+-- SQLite by default. For Postgres: AUTOINCREMENT→SERIAL, TEXT dates→DATE/TIMESTAMPTZ.
+
+CREATE TABLE IF NOT EXISTS platforms (
+    platform_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL UNIQUE,
+    model         TEXT NOT NULL CHECK(model IN ('stream','purchase')),
+    rate_per_unit REAL NOT NULL   -- $ per stream, or artist revenue share (0-1) for purchase
+);
 
 CREATE TABLE IF NOT EXISTS artists (
-    artist_id   TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    popularity  INTEGER DEFAULT 0,
-    followers   INTEGER DEFAULT 0
+    artist_id        TEXT PRIMARY KEY,
+    name             TEXT NOT NULL,
+    country          TEXT,
+    monthly_listeners INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS genres (
-    genre_id    INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL UNIQUE
+    genre_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name     TEXT NOT NULL UNIQUE
 );
 
 CREATE TABLE IF NOT EXISTS artist_genres (
-    artist_id   TEXT NOT NULL REFERENCES artists(artist_id) ON DELETE CASCADE,
-    genre_id    INTEGER NOT NULL REFERENCES genres(genre_id) ON DELETE CASCADE,
+    artist_id TEXT    NOT NULL REFERENCES artists(artist_id) ON DELETE CASCADE,
+    genre_id  INTEGER NOT NULL REFERENCES genres(genre_id)  ON DELETE CASCADE,
     PRIMARY KEY (artist_id, genre_id)
 );
 
-CREATE TABLE IF NOT EXISTS albums (
-    album_id     TEXT PRIMARY KEY,
-    name         TEXT NOT NULL,
-    release_date TEXT,
-    album_type   TEXT DEFAULT 'album'
-);
-
 CREATE TABLE IF NOT EXISTS tracks (
-    track_id    TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    album_id    TEXT REFERENCES albums(album_id) ON DELETE SET NULL,
-    duration_ms INTEGER DEFAULT 0,
-    popularity  INTEGER DEFAULT 0,
-    explicit    INTEGER DEFAULT 0
+    track_id     TEXT PRIMARY KEY,
+    artist_id    TEXT NOT NULL REFERENCES artists(artist_id) ON DELETE CASCADE,
+    title        TEXT NOT NULL,
+    duration_ms  INTEGER DEFAULT 0,
+    release_date TEXT,
+    explicit     INTEGER DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS track_artists (
-    track_id    TEXT NOT NULL REFERENCES tracks(track_id) ON DELETE CASCADE,
-    artist_id   TEXT NOT NULL REFERENCES artists(artist_id) ON DELETE CASCADE,
-    PRIMARY KEY (track_id, artist_id)
+-- One row per track × platform × month.
+-- units = streams (streaming) or purchases (Bandcamp/purchase model)
+-- revenue = pre-calculated royalty payout in USD
+CREATE TABLE IF NOT EXISTS streams (
+    stream_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id    TEXT    NOT NULL REFERENCES tracks(track_id)    ON DELETE CASCADE,
+    platform_id INTEGER NOT NULL REFERENCES platforms(platform_id) ON DELETE CASCADE,
+    period      TEXT    NOT NULL,  -- 'YYYY-MM'
+    units       INTEGER NOT NULL DEFAULT 0,
+    revenue     REAL    NOT NULL DEFAULT 0.0
 );
 
-CREATE TABLE IF NOT EXISTS saved_tracks (
-    track_id    TEXT PRIMARY KEY REFERENCES tracks(track_id) ON DELETE CASCADE,
-    added_at    TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_track_artists_artist ON track_artists(artist_id);
-CREATE INDEX IF NOT EXISTS idx_artist_genres_genre  ON artist_genres(genre_id);
-CREATE INDEX IF NOT EXISTS idx_tracks_album          ON tracks(album_id);
-CREATE INDEX IF NOT EXISTS idx_saved_tracks_added    ON saved_tracks(added_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_streams_unique   ON streams(track_id, platform_id, period);
+CREATE INDEX        IF NOT EXISTS idx_streams_period   ON streams(period);
+CREATE INDEX        IF NOT EXISTS idx_streams_platform ON streams(platform_id);
+CREATE INDEX        IF NOT EXISTS idx_tracks_artist    ON tracks(artist_id);
+CREATE INDEX        IF NOT EXISTS idx_artist_genres_g  ON artist_genres(genre_id);

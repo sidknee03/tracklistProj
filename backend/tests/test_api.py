@@ -1,6 +1,5 @@
-"""Tests for all five API endpoints using mocked psycopg2 connection."""
+"""Tests for all API endpoints using mocked DB cursor."""
 
-import pytest
 from contextlib import ExitStack
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
@@ -9,13 +8,12 @@ from app.main import app
 
 client = TestClient(app)
 
-# Patch targets — routes bind db_cursor locally via `from ... import`
 _ROUTE_MODULES = [
-    "app.api.stats.db_cursor",
-    "app.api.genres.db_cursor",
-    "app.api.popularity.db_cursor",
+    "app.api.summary.db_cursor",
+    "app.api.platforms.db_cursor",
     "app.api.artists.db_cursor",
-    "app.api.duration.db_cursor",
+    "app.api.genres.db_cursor",
+    "app.api.trends.db_cursor",
 ]
 
 
@@ -29,8 +27,6 @@ def make_cursor(rows):
 
 
 class patch_cursor:
-    """Context manager that patches db_cursor in every route module at once."""
-
     def __init__(self, rows):
         self._rows = rows
         self._stack = ExitStack()
@@ -54,84 +50,79 @@ class TestHealth:
 
 class TestSummary:
     def test_returns_summary(self):
-        row = {"total_tracks": 100, "total_artists": 30, "total_genres": 12}
+        row = {"total_artists": 25, "total_tracks": 150, "total_platforms": 9,
+               "total_revenue_usd": 48320.50, "total_streams": 12_000_000}
         with patch_cursor([row]):
-            r = client.get("/api/stats/summary")
+            r = client.get("/api/summary")
         assert r.status_code == 200
         data = r.json()
-        assert data["total_tracks"] == 100
-        assert data["total_artists"] == 30
-        assert data["total_genres"] == 12
+        assert data["total_artists"] == 25
+        assert data["total_platforms"] == 9
 
     def test_no_data_returns_404(self):
         with patch_cursor([]):
-            r = client.get("/api/stats/summary")
+            r = client.get("/api/summary")
         assert r.status_code == 404
 
 
-class TestGenres:
-    def test_returns_list(self):
+class TestPlatforms:
+    def test_revenue_returns_list(self):
         rows = [
-            {"genre": "pop", "track_count": 42},
-            {"genre": "rock", "track_count": 18},
+            {"platform": "Spotify", "model": "stream", "rate_per_unit": 0.004,
+             "total_units": 5_000_000, "total_revenue": 20000.0, "revenue_rank": 1},
+            {"platform": "Tidal", "model": "stream", "rate_per_unit": 0.013,
+             "total_units": 200_000, "total_revenue": 2600.0, "revenue_rank": 2},
         ]
         with patch_cursor(rows):
-            r = client.get("/api/genres/distribution")
+            r = client.get("/api/platforms/revenue")
         assert r.status_code == 200
         body = r.json()
         assert len(body) == 2
-        assert body[0]["genre"] == "pop"
+        assert body[0]["platform"] == "Spotify"
+        assert body[1]["revenue_rank"] == 2
 
-    def test_empty_list(self):
-        with patch_cursor([]):
-            r = client.get("/api/genres/distribution")
-        assert r.status_code == 200
-        assert r.json() == []
-
-
-class TestPopularity:
-    def test_returns_decades(self):
-        rows = [
-            {"decade": 1990, "avg_popularity": 65.2, "track_count": 10},
-            {"decade": 2000, "avg_popularity": 72.5, "track_count": 25},
-        ]
+    def test_efficiency_returns_list(self):
+        rows = [{"name": "Tidal", "model": "stream", "published_rate": 0.013,
+                 "actual_rate": 0.013, "total_revenue": 2600.0, "total_units": 200_000}]
         with patch_cursor(rows):
-            r = client.get("/api/popularity/by-decade")
+            r = client.get("/api/platforms/efficiency")
         assert r.status_code == 200
-        body = r.json()
-        assert body[0]["decade"] == 1990
-        assert body[1]["avg_popularity"] == 72.5
 
 
 class TestArtists:
-    def test_returns_ranked_artists(self):
+    def test_top_artists(self):
         rows = [
-            {"name": "Artist A", "artist_popularity": 88, "track_count": 15, "rnk": 1},
-            {"name": "Artist B", "artist_popularity": 74, "track_count": 10, "rnk": 2},
+            {"name": "Nova Hayes", "country": "CA", "monthly_listeners": 800_000,
+             "total_revenue": 9200.0, "total_units": 2_300_000, "rnk": 1},
         ]
         with patch_cursor(rows):
             r = client.get("/api/artists/top")
         assert r.status_code == 200
         body = r.json()
         assert body[0]["rnk"] == 1
-        assert body[1]["name"] == "Artist B"
-
-    def test_limit_param(self):
-        rows = [{"name": "A", "artist_popularity": 80, "track_count": 5, "rnk": 1}]
-        with patch_cursor(rows):
-            r = client.get("/api/artists/top?limit=1")
-        assert r.status_code == 200
+        assert body[0]["country"] == "CA"
 
 
-class TestDuration:
-    def test_returns_genres_with_duration(self):
+class TestGenres:
+    def test_genre_revenue(self):
         rows = [
-            {"genre": "jazz", "avg_duration_sec": 245.5, "track_count": 8},
-            {"genre": "pop",  "avg_duration_sec": 198.2, "track_count": 40},
+            {"genre": "Pop", "total_revenue": 15000.0, "total_units": 3_000_000,
+             "track_count": 40, "artist_count": 6},
         ]
         with patch_cursor(rows):
-            r = client.get("/api/duration/by-genre")
+            r = client.get("/api/genres/revenue")
+        assert r.status_code == 200
+        assert r.json()[0]["genre"] == "Pop"
+
+
+class TestTrends:
+    def test_monthly_trend(self):
+        rows = [
+            {"period": "2023-01", "monthly_revenue": 1200.0, "running_total": 1200.0},
+            {"period": "2023-02", "monthly_revenue": 1500.0, "running_total": 2700.0},
+        ]
+        with patch_cursor(rows):
+            r = client.get("/api/trends/monthly")
         assert r.status_code == 200
         body = r.json()
-        assert body[0]["genre"] == "jazz"
-        assert body[0]["avg_duration_sec"] == 245.5
+        assert body[1]["running_total"] == 2700.0

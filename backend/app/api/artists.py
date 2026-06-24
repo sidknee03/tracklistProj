@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.db.connection import db_cursor
+from app.db.connection import db_cursor, PH
 
 router = APIRouter(prefix="/api/artists", tags=["artists"])
 
@@ -8,7 +8,8 @@ router = APIRouter(prefix="/api/artists", tags=["artists"])
 def top_artists(limit: int = 15):
     with db_cursor() as cur:
         cur.execute(
-            "SELECT name, artist_popularity, track_count, rnk FROM v_top_artists LIMIT %s",
+            f"SELECT name, country, monthly_listeners, total_revenue, total_units, rnk "
+            f"FROM v_artist_earnings LIMIT {PH}",
             (limit,),
         )
         rows = cur.fetchall()

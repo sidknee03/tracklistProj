@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import stats, genres, popularity, artists, duration
+from app.api import summary, platforms, artists, genres, trends
 
-app = FastAPI(title="Music Analytics API", version="1.0.0")
+app = FastAPI(title="Streaming Royalty Analytics API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -12,7 +12,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (stats.router, genres.router, popularity.router, artists.router, duration.router):
+for router in (summary.router, platforms.router, artists.router, genres.router, trends.router):
     app.include_router(router)
 
 

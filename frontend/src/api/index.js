@@ -1,11 +1,10 @@
 import axios from "axios";
 
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const api  = axios.create({ baseURL: BASE });
 
-const api = axios.create({ baseURL: BASE });
-
-export const fetchSummary        = () => api.get("/api/stats/summary").then(r => r.data);
-export const fetchGenres         = () => api.get("/api/genres/distribution").then(r => r.data);
-export const fetchPopByDecade    = () => api.get("/api/popularity/by-decade").then(r => r.data);
-export const fetchTopArtists     = () => api.get("/api/artists/top").then(r => r.data);
-export const fetchDurationByGenre = () => api.get("/api/duration/by-genre").then(r => r.data);
+export const fetchSummary          = () => api.get("/api/summary").then(r => r.data);
+export const fetchPlatformRevenue  = () => api.get("/api/platforms/revenue").then(r => r.data);
+export const fetchTopArtists       = () => api.get("/api/artists/top").then(r => r.data);
+export const fetchGenreRevenue     = () => api.get("/api/genres/revenue").then(r => r.data);
+export const fetchMonthlyTrend     = () => api.get("/api/trends/monthly").then(r => r.data);
